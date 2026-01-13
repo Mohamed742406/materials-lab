@@ -496,305 +496,855 @@
             return <canvas ref={chartRef} />;
         };
 
-        // ============= AGGREGATE TAB COMPONENT (WITH SPEC SELECTOR) =============
-        const AggregateTab = ({ 
-            title, 
-            subtitle, 
-            sieveDefinitions, 
-            aggregateData, 
-            setAggregateData 
-        }) => {
-            // ASTM Standard Limits Database
-            const standardSpecs = {
-                'size57': { 
-                    name: 'ASTM Size 57 (1 in. to No. 4)', 
-                    limits: { '25.0': {min:95,max:100}, '12.5': {min:25,max:60}, '4.75': {min:0,max:10}, '2.36': {min:0,max:5} }
-                },
-                'size67': { 
-                    name: 'ASTM Size 67 (¾ in. to No. 4)', 
-                    limits: { '19.0': {min:90,max:100}, '9.5': {min:20,max:55}, '4.75': {min:0,max:10}, '2.36': {min:0,max:5} }
-                },
-                'concreteSand': { 
-                    name: 'Concrete Sand (Fine Aggregate)', 
-                    limits: { '9.5': {min:100,max:100}, '4.75': {min:95,max:100}, '2.36': {min:80,max:100}, '1.18': {min:50,max:85}, '0.600': {min:25,max:60}, '0.300': {min:5,max:30}, '0.150': {min:0,max:10} }
-                }
-            };
+      // ============= AGGREGATE TAB COMPONENT (Reusable) =============
 
-            const [samplePrep, setSamplePrep] = useState({ originalWeight: '', dryWeight: '', washedWeight: '' });
-            const [selectedSpec, setSelectedSpec] = useState('');
+        const AggregateTab = ({ 
+
+            title, 
+
+            subtitle, 
+
+            sieveDefinitions, 
+
+            aggregateData, 
+
+            setAggregateData 
+
+        }) => {
+
+            // Sample Preparation State
+
+            const [samplePrep, setSamplePrep] = useState({
+
+                originalWeight: '',
+
+                dryWeight: '',
+
+                washedWeight: ''
+
+            });
+
+
 
             // Weights State
+
             const [weights, setWeights] = useState(() => {
+
                 const initial = {};
-                sieveDefinitions.forEach(sieve => { initial[sieve.id] = ''; });
+
+                sieveDefinitions.forEach(sieve => {
+
+                    initial[sieve.id] = '';
+
+                });
+
                 return initial;
+
             });
+
+
 
             // Spec Limits State (User Editable)
+
             const [specLimits, setSpecLimits] = useState(() => {
+
                 const initial = {};
+
                 sieveDefinitions.forEach(sieve => {
-                    initial[sieve.id] = { min: sieve.defaultMin ?? '', max: sieve.defaultMax ?? '' };
+
+                    initial[sieve.id] = {
+
+                        min: sieve.defaultMin ?? '',
+
+                        max: sieve.defaultMax ?? ''
+
+                    };
+
                 });
+
                 return initial;
+
             });
 
-            // Function to Apply Specs
-            const handleSpecSelection = (specKey) => {
-                setSelectedSpec(specKey);
-                if (!specKey) return; // If user selects "Custom", do nothing (keep current)
 
-                const spec = standardSpecs[specKey];
-                const newLimits = { ...specLimits };
-
-                // Clear existing limits first? Optional. Let's overwrite.
-                sieveDefinitions.forEach(sieve => {
-                    // Try to find matching limit by sieve ID (assuming ID is the size like '19.0')
-                    // OR try to match by partial string if needed.
-                    // Here we assume sieve.id matches the keys in 'limits' object (e.g., '19.0')
-                    if (spec.limits[sieve.id]) {
-                        newLimits[sieve.id] = { 
-                            min: spec.limits[sieve.id].min, 
-                            max: spec.limits[sieve.id].max 
-                        };
-                    } else {
-                        // If spec doesn't mention this sieve, clear it or leave it? Let's clear to be safe.
-                        if (sieve.id !== 'pan') {
-                            newLimits[sieve.id] = { min: '', max: '' };
-                        }
-                    }
-                });
-                setSpecLimits(newLimits);
-            };
 
             // Calculate wash loss
+
             const washLoss = useMemo(() => {
+
                 const dry = parseFloat(samplePrep.dryWeight) || 0;
+
                 const washed = parseFloat(samplePrep.washedWeight) || 0;
-                if (dry > 0 && washed > 0 && dry >= washed) return dry - washed;
+
+                if (dry > 0 && washed > 0 && dry >= washed) {
+
+                    return dry - washed;
+
+                }
+
                 return 0;
+
             }, [samplePrep.dryWeight, samplePrep.washedWeight]);
 
+
+
             // Calculate all values
+
             const calculations = useMemo(() => {
+
                 const dryWeight = parseFloat(samplePrep.dryWeight) || 0;
-                const sumRetained = Object.values(weights).reduce((sum, w) => sum + (parseFloat(w) || 0), 0);
+
+                
+
+                // Sum of retained weights
+
+                const sumRetained = Object.values(weights).reduce((sum, w) => {
+
+                    return sum + (parseFloat(w) || 0);
+
+                }, 0);
+
+
+
+                // Total includes wash loss (for verification)
+
                 const totalWithWashLoss = sumRetained + washLoss;
 
+
+
                 let cumulativeRetained = 0;
+
                 const results = sieveDefinitions.map(sieve => {
+
                     let weightRetained = parseFloat(weights[sieve.id]) || 0;
-                    if (sieve.id === 'pan') weightRetained += washLoss;
 
-                    const percentRetained = dryWeight > 0 ? (weightRetained / dryWeight) * 100 : 0;
-                    cumulativeRetained += percentRetained;
-                    const percentPassing = Math.max(0, 100 - cumulativeRetained);
+                    
 
-                    const minLimit = specLimits[sieve.id]?.min;
-                    const maxLimit = specLimits[sieve.id]?.max;
+                    // Add wash loss to pan
 
-                    let isWithinSpec = true;
-                    if (minLimit !== '' && maxLimit !== '' && minLimit !== null && maxLimit !== null && dryWeight > 0) {
-                        isWithinSpec = percentPassing >= parseFloat(minLimit) && percentPassing <= parseFloat(maxLimit);
+                    if (sieve.id === 'pan') {
+
+                        weightRetained += washLoss;
+
                     }
 
+
+
+                    const percentRetained = dryWeight > 0 ? (weightRetained / dryWeight) * 100 : 0;
+
+                    cumulativeRetained += percentRetained;
+
+                    const percentPassing = Math.max(0, 100 - cumulativeRetained);
+
+
+
+                    const minLimit = specLimits[sieve.id]?.min;
+
+                    const maxLimit = specLimits[sieve.id]?.max;
+
+
+
+                    let isWithinSpec = true;
+
+                    if (minLimit !== '' && maxLimit !== '' && minLimit !== null && maxLimit !== null && dryWeight > 0) {
+
+                        isWithinSpec = percentPassing >= parseFloat(minLimit) && percentPassing <= parseFloat(maxLimit);
+
+                    }
+
+
+
                     return {
+
                         id: sieve.id,
+
                         weightRetained,
+
                         percentRetained: percentRetained.toFixed(1),
+
                         cumulativeRetained: cumulativeRetained.toFixed(1),
+
                         percentPassing: parseFloat(percentPassing.toFixed(1)),
+
                         minLimit: minLimit !== '' ? parseFloat(minLimit) : null,
+
                         maxLimit: maxLimit !== '' ? parseFloat(maxLimit) : null,
+
                         isWithinSpec,
+
                     };
+
                 });
+
+
 
                 const outOfSpecCount = results.filter(r => !r.isWithinSpec && r.minLimit !== null).length;
+
                 const withinSpecCount = results.filter(r => r.isWithinSpec && r.minLimit !== null).length;
 
+
+
                 return { results, totalWithWashLoss, outOfSpecCount, withinSpecCount, dryWeight };
+
             }, [weights, samplePrep.dryWeight, specLimits, washLoss, sieveDefinitions]);
 
+
+
+            // Update parent data when calculations change
+
             useEffect(() => {
+
                 setAggregateData(calculations.results);
+
             }, [calculations.results, setAggregateData]);
 
+
+
             const handleWeightChange = (sieveId, value) => {
+
                 setWeights(prev => ({ ...prev, [sieveId]: value }));
+
             };
+
+
 
             const handleSpecLimitChange = (sieveId, type, value) => {
+
                 setSpecLimits(prev => ({
+
                     ...prev,
+
                     [sieveId]: { ...prev[sieveId], [type]: value }
+
                 }));
+
             };
+
+
 
             const handleReset = () => {
+
                 const resetWeights = {};
+
                 const resetLimits = {};
+
                 sieveDefinitions.forEach(sieve => {
+
                     resetWeights[sieve.id] = '';
-                    resetLimits[sieve.id] = { min: sieve.defaultMin ?? '', max: sieve.defaultMax ?? '' };
+
+                    resetLimits[sieve.id] = {
+
+                        min: sieve.defaultMin ?? '',
+
+                        max: sieve.defaultMax ?? ''
+
+                    };
+
                 });
+
                 setWeights(resetWeights);
+
                 setSpecLimits(resetLimits);
+
                 setSamplePrep({ originalWeight: '', dryWeight: '', washedWeight: '' });
-                setSelectedSpec('');
+
             };
 
+
+
             const hasData = calculations.dryWeight > 0;
+
             const allPassing = calculations.outOfSpecCount === 0 && hasData;
 
+
+
             return (
+
                 <div className="p-4 space-y-4">
+
                     {/* Header */}
+
                     <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+
                         <div className="flex items-center justify-between mb-4">
+
                             <div>
+
                                 <h2 className="text-lg font-bold text-slate-800">{title}</h2>
+
                                 <p className="english-text text-sm text-slate-500">{subtitle}</p>
+
                             </div>
-                            <button onClick={handleReset} className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors text-sm">
-                                <RefreshIcon /><span className="font-medium">إعادة تعيين</span>
+
+                            <button
+
+                                onClick={handleReset}
+
+                                className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors text-sm"
+
+                            >
+
+                                <RefreshIcon />
+
+                                <span className="font-medium">إعادة تعيين</span>
+
                             </button>
+
                         </div>
 
-                        {/* Sample Preparation */}
+
+
+                        {/* Sample Preparation Section */}
+
                         <div className="bg-gradient-to-l from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-100">
-                            <h3 className="text-sm font-bold text-blue-800 mb-3">تحضير العينة <span className="english-text text-xs font-normal text-blue-600">/ Sample Preparation (ASTM C117/C136)</span></h3>
+
+                            <h3 className="text-sm font-bold text-blue-800 mb-3">
+
+                                تحضير العينة <span className="english-text text-xs font-normal text-blue-600">/ Sample Preparation (ASTM C117/C136)</span>
+
+                            </h3>
+
                             <div className="grid grid-cols-4 gap-4">
+
                                 <div>
-                                    <label className="block text-xs font-medium text-slate-700 mb-1">وزن العينة الأصلية</label>
-                                    <input type="number" value={samplePrep.originalWeight} onChange={(e) => setSamplePrep(p => ({ ...p, originalWeight: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-center" placeholder="0.0" dir="ltr" />
+
+                                    <label className="block text-xs font-medium text-slate-700 mb-1">
+
+                                        وزن العينة الأصلية
+
+                                        <span className="english-text block text-slate-500 font-normal">Original Sample Wt. (g)</span>
+
+                                    </label>
+
+                                    <input
+
+                                        type="number"
+
+                                        min="0"
+
+                                        step="0.1"
+
+                                        value={samplePrep.originalWeight}
+
+                                        onChange={(e) => setSamplePrep(p => ({ ...p, originalWeight: e.target.value }))}
+
+                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-center english-text focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+
+                                        placeholder="0.0"
+
+                                        dir="ltr"
+
+                                    />
+
                                 </div>
+
                                 <div>
-                                    <label className="block text-xs font-medium text-slate-700 mb-1">الوزن بعد التجفيف</label>
-                                    <input type="number" value={samplePrep.dryWeight} onChange={(e) => setSamplePrep(p => ({ ...p, dryWeight: e.target.value }))} className="w-full px-3 py-2 border border-blue-400 rounded-lg text-center font-bold" placeholder="0.0" dir="ltr" />
+
+                                    <label className="block text-xs font-medium text-slate-700 mb-1">
+
+                                        الوزن بعد التجفيف
+
+                                        <span className="english-text block text-slate-500 font-normal">Dry Weight - Total (g)</span>
+
+                                    </label>
+
+                                    <input
+
+                                        type="number"
+
+                                        min="0"
+
+                                        step="0.1"
+
+                                        value={samplePrep.dryWeight}
+
+                                        onChange={(e) => setSamplePrep(p => ({ ...p, dryWeight: e.target.value }))}
+
+                                        className="w-full px-3 py-2 border border-blue-400 rounded-lg text-center english-text font-bold focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"
+
+                                        placeholder="0.0"
+
+                                        dir="ltr"
+
+                                    />
+
                                 </div>
+
                                 <div>
-                                    <label className="block text-xs font-medium text-slate-700 mb-1">الوزن بعد الغسيل</label>
-                                    <input type="number" value={samplePrep.washedWeight} onChange={(e) => setSamplePrep(p => ({ ...p, washedWeight: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-center" placeholder="0.0" dir="ltr" />
+
+                                    <label className="block text-xs font-medium text-slate-700 mb-1">
+
+                                        الوزن بعد الغسيل
+
+                                        <span className="english-text block text-slate-500 font-normal">Washed Weight (g)</span>
+
+                                    </label>
+
+                                    <input
+
+                                        type="number"
+
+                                        min="0"
+
+                                        step="0.1"
+
+                                        value={samplePrep.washedWeight}
+
+                                        onChange={(e) => setSamplePrep(p => ({ ...p, washedWeight: e.target.value }))}
+
+                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-center english-text focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+
+                                        placeholder="0.0"
+
+                                        dir="ltr"
+
+                                    />
+
                                 </div>
+
                                 <div className={`rounded-lg p-3 ${washLoss > 0 ? 'bg-amber-100 border border-amber-300' : 'bg-slate-100 border border-slate-200'}`}>
-                                    <div className="text-xs font-medium text-slate-600">فقد الغسيل</div>
-                                    <div className={`text-xl font-bold english-text ${washLoss > 0 ? 'text-amber-700' : 'text-slate-400'}`}>{washLoss.toFixed(1)}</div>
+
+                                    <div className="text-xs font-medium text-slate-600">
+
+                                        فقد الغسيل
+
+                                        <span className="english-text block text-slate-500 font-normal">Wash Loss (g)</span>
+
+                                    </div>
+
+                                    <div className={`text-xl font-bold english-text ${washLoss > 0 ? 'text-amber-700' : 'text-slate-400'}`}>
+
+                                        {washLoss.toFixed(1)}
+
+                                    </div>
+
                                 </div>
+
                             </div>
+
                         </div>
+
+
 
                         {/* Summary Cards */}
+
                         <div className="grid grid-cols-4 gap-3 mt-4">
+
                             <div className="bg-blue-50 rounded-lg p-3 border border-blue-100">
-                                <div className="text-xl font-bold text-blue-600 english-text">{calculations.dryWeight.toFixed(1)}</div>
+
+                                <div className="text-xl font-bold text-blue-600 english-text">
+
+                                    {calculations.dryWeight.toFixed(1)}
+
+                                </div>
+
                                 <div className="text-xs font-medium text-blue-800">الوزن الجاف (جم)</div>
+
+                                <div className="english-text text-xs text-blue-600">Dry Weight (g)</div>
+
                             </div>
+
                             <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
-                                <div className="text-xl font-bold text-slate-700 english-text">{calculations.totalWithWashLoss.toFixed(1)}</div>
+
+                                <div className="text-xl font-bold text-slate-700 english-text">
+
+                                    {calculations.totalWithWashLoss.toFixed(1)}
+
+                                </div>
+
                                 <div className="text-xs font-medium text-slate-700">المجموع + الفقد</div>
+
+                                <div className="english-text text-xs text-slate-500">Total + Loss</div>
+
                             </div>
+
                             <div className={`rounded-lg p-3 border ${allPassing ? 'bg-green-50 border-green-100' : 'bg-slate-50 border-slate-200'}`}>
-                                <div className={`text-xl font-bold ${allPassing ? 'text-green-600' : 'text-slate-400'}`}>{hasData ? calculations.withinSpecCount : '-'}</div>
+
+                                <div className={`text-xl font-bold ${allPassing ? 'text-green-600' : 'text-slate-400'}`}>
+
+                                    {hasData ? calculations.withinSpecCount : '-'}
+
+                                </div>
+
                                 <div className={`text-xs font-medium ${allPassing ? 'text-green-800' : 'text-slate-600'}`}>ضمن المواصفات</div>
+
+                                <div className={`english-text text-xs ${allPassing ? 'text-green-600' : 'text-slate-500'}`}>Within Spec</div>
+
                             </div>
+
                             <div className={`rounded-lg p-3 border ${calculations.outOfSpecCount > 0 ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-200'}`}>
-                                <div className={`text-xl font-bold ${calculations.outOfSpecCount > 0 ? 'text-red-600' : 'text-slate-400'}`}>{hasData ? calculations.outOfSpecCount : '-'}</div>
+
+                                <div className={`text-xl font-bold ${calculations.outOfSpecCount > 0 ? 'text-red-600' : 'text-slate-400'}`}>
+
+                                    {hasData ? calculations.outOfSpecCount : '-'}
+
+                                </div>
+
                                 <div className={`text-xs font-medium ${calculations.outOfSpecCount > 0 ? 'text-red-800' : 'text-slate-600'}`}>خارج المواصفات</div>
+
+                                <div className={`english-text text-xs ${calculations.outOfSpecCount > 0 ? 'text-red-600' : 'text-slate-500'}`}>Out of Spec</div>
+
                             </div>
+
                         </div>
+
                     </div>
+
+
 
                     <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
-                        {/* Table */}
+
+                        {/* Data Entry Table */}
+
                         <div className="xl:col-span-3 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                            <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex justify-between items-center">
-                                <div>
-                                    <h3 className="text-sm font-bold text-slate-800">جدول التحليل المنخلي</h3>
-                                    <p className="english-text text-xs text-slate-500">Sieve Analysis Data Table</p>
-                                </div>
-                                {/* Spec Selector */}
-                                <select 
-                                    value={selectedSpec}
-                                    onChange={(e) => handleSpecSelection(e.target.value)}
-                                    className="text-xs p-1.5 rounded border border-slate-300 outline-none bg-white english-text"
-                                >
-                                    <option value="">-- Manual Specs --</option>
-                                    <option value="size57">ASTM Size 57</option>
-                                    <option value="size67">ASTM Size 67</option>
-                                    <option value="concreteSand">Concrete Sand</option>
-                                </select>
+
+                            <div className="bg-slate-50 border-b border-slate-200 px-4 py-3">
+
+                                <h3 className="text-sm font-bold text-slate-800">جدول التحليل المنخلي</h3>
+
+                                <p className="english-text text-xs text-slate-500">Sieve Analysis Data Table</p>
+
                             </div>
+
                             <div className="overflow-x-auto">
+
                                 <table className="w-full text-sm" dir="rtl">
+
                                     <thead>
+
                                         <tr className="bg-slate-800 text-white">
-                                            <th className="px-2 py-2 text-right">حجم المنخل</th>
-                                            <th className="px-2 py-2 text-center">الوزن المحجوز</th>
-                                            <th className="px-2 py-2 text-center">% المحجوز</th>
-                                            <th className="px-2 py-2 text-center">% التراكمي</th>
-                                            <th className="px-2 py-2 text-center">% المار</th>
-                                            <th className="px-2 py-2 text-center w-32">حدود المواصفة</th>
-                                            <th className="px-2 py-2 text-center">الحالة</th>
+
+                                            <th className="px-2 py-2 text-right">
+
+                                                <div className="font-bold text-xs">حجم المنخل</div>
+
+                                                <div className="english-text text-xs text-slate-300 font-normal">Sieve Size</div>
+
+                                            </th>
+
+                                            <th className="px-2 py-2 text-center">
+
+                                                <div className="font-bold text-xs">الوزن المحجوز</div>
+
+                                                <div className="english-text text-xs text-slate-300 font-normal">Wt. Ret. (g)</div>
+
+                                            </th>
+
+                                            <th className="px-2 py-2 text-center">
+
+                                                <div className="font-bold text-xs">% المحجوز</div>
+
+                                                <div className="english-text text-xs text-slate-300 font-normal">% Ret.</div>
+
+                                            </th>
+
+                                            <th className="px-2 py-2 text-center">
+
+                                                <div className="font-bold text-xs">% التراكمي</div>
+
+                                                <div className="english-text text-xs text-slate-300 font-normal">Cum. %</div>
+
+                                            </th>
+
+                                            <th className="px-2 py-2 text-center">
+
+                                                <div className="font-bold text-xs">% المار</div>
+
+                                                <div className="english-text text-xs text-slate-300 font-normal">% Pass</div>
+
+                                            </th>
+
+                                            <th className="px-2 py-2 text-center">
+
+                                                <div className="font-bold text-xs">حدود المواصفة (أدنى/أقصى)</div>
+
+                                                <div className="english-text text-xs text-slate-300 font-normal">Spec Limits (Min/Max)</div>
+
+                                            </th>
+
+                                            <th className="px-2 py-2 text-center">
+
+                                                <div className="font-bold text-xs">الحالة</div>
+
+                                                <div className="english-text text-xs text-slate-300 font-normal">Status</div>
+
+                                            </th>
+
                                         </tr>
+
                                     </thead>
+
                                     <tbody>
+
                                         {sieveDefinitions.map((sieve, index) => {
+
                                             const calc = calculations.results.find(r => r.id === sieve.id);
+
                                             const isOutOfSpec = calc && !calc.isWithinSpec && calc.minLimit !== null && hasData;
+
                                             const isPan = sieve.id === 'pan';
+
+                                            
+
                                             return (
-                                                <tr key={sieve.id} className={`border-b border-slate-100 ${isOutOfSpec ? 'bg-red-50' : index % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
-                                                    <td className="px-2 py-2 font-bold text-xs">{sieve.sieveMetric} <span className="english-text font-normal text-slate-500">({sieve.sieveImperial})</span></td>
-                                                    <td className="px-2 py-2 text-center">
-                                                        <input type="number" min="0" step="0.1" value={weights[sieve.id]} onChange={(e) => handleWeightChange(sieve.id, e.target.value)} className={`w-16 px-1 py-1 border rounded text-center english-text text-sm ${isOutOfSpec ? 'border-red-300' : 'border-slate-300'}`} placeholder="0.0" />
-                                                        {isPan && washLoss > 0 && <div className="text-[10px] text-amber-600 mt-1">+{washLoss.toFixed(1)} فقد</div>}
+
+                                                <tr 
+
+                                                    key={sieve.id}
+
+                                                    className={`border-b border-slate-100 transition-colors ${
+
+                                                        isOutOfSpec 
+
+                                                            ? 'bg-red-50 hover:bg-red-100' 
+
+                                                            : index % 2 === 0 
+
+                                                                ? 'bg-white hover:bg-slate-50' 
+
+                                                                : 'bg-slate-50/50 hover:bg-slate-100'
+
+                                                    }`}
+
+                                                >
+
+                                                    <td className="px-2 py-2">
+
+                                                        <div className="font-bold text-slate-800 text-xs">{sieve.sieveMetric}</div>
+
+                                                        <div className="english-text text-xs text-slate-500">({sieve.sieveImperial})</div>
+
                                                     </td>
-                                                    <td className="px-2 py-2 text-center english-text text-sm">{hasData ? calc?.percentRetained : '-'}</td>
-                                                    <td className="px-2 py-2 text-center english-text text-sm">{hasData ? calc?.cumulativeRetained : '-'}</td>
-                                                    <td className="px-2 py-2 text-center english-text font-bold text-sm">{hasData ? calc?.percentPassing.toFixed(1) : '-'}</td>
+
+                                                    <td className="px-2 py-2">
+
+                                                        <input
+
+                                                            type="number"
+
+                                                            min="0"
+
+                                                            step="0.1"
+
+                                                            value={weights[sieve.id]}
+
+                                                            onChange={(e) => handleWeightChange(sieve.id, e.target.value)}
+
+                                                            className={`w-20 px-2 py-1.5 border rounded text-center english-text text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none ${
+
+                                                                isOutOfSpec ? 'border-red-300 bg-white' : 'border-slate-300 bg-white'
+
+                                                            }`}
+
+                                                            placeholder="0.0"
+
+                                                            dir="ltr"
+
+                                                        />
+
+                                                        {isPan && washLoss > 0 && (
+
+                                                            <div className="text-xs text-amber-600 mt-1">+{washLoss.toFixed(1)} فقد</div>
+
+                                                        )}
+
+                                                    </td>
+
                                                     <td className="px-2 py-2 text-center">
+
+                                                        <span className={`english-text text-sm ${hasData ? 'text-slate-700' : 'text-slate-400'}`}>
+
+                                                            {hasData ? calc?.percentRetained : '-'}
+
+                                                        </span>
+
+                                                    </td>
+
+                                                    <td className="px-2 py-2 text-center">
+
+                                                        <span className={`english-text text-sm ${hasData ? 'text-slate-700' : 'text-slate-400'}`}>
+
+                                                            {hasData ? calc?.cumulativeRetained : '-'}
+
+                                                        </span>
+
+                                                    </td>
+
+                                                    <td className="px-2 py-2 text-center">
+
+                                                        <span className={`english-text font-bold text-sm ${
+
+                                                            isOutOfSpec ? 'text-red-600' : hasData ? 'text-blue-600' : 'text-slate-400'
+
+                                                        }`}>
+
+                                                            {hasData ? calc?.percentPassing.toFixed(1) : '-'}
+
+                                                        </span>
+
+                                                    </td>
+
+                                                    <td className="px-2 py-2">
+
                                                         {!isPan ? (
+
                                                             <div className="flex items-center justify-center gap-1">
-                                                                <input type="number" min="0" max="100" value={specLimits[sieve.id]?.min ?? ''} onChange={(e) => handleSpecLimitChange(sieve.id, 'min', e.target.value)} className="w-10 p-1 text-center text-xs border rounded english-text bg-slate-50" placeholder="Min" />
+
+                                                                <input
+
+                                                                    type="number"
+
+                                                                    min="0"
+
+                                                                    max="100"
+
+                                                                    value={specLimits[sieve.id]?.min ?? ''}
+
+                                                                    onChange={(e) => handleSpecLimitChange(sieve.id, 'min', e.target.value)}
+
+                                                                    className="spec-input english-text"
+
+                                                                    placeholder="Min"
+
+                                                                    dir="ltr"
+
+                                                                />
+
                                                                 <span className="text-slate-400">-</span>
-                                                                <input type="number" min="0" max="100" value={specLimits[sieve.id]?.max ?? ''} onChange={(e) => handleSpecLimitChange(sieve.id, 'max', e.target.value)} className="w-10 p-1 text-center text-xs border rounded english-text bg-slate-50" placeholder="Max" />
+
+                                                                <input
+
+                                                                    type="number"
+
+                                                                    min="0"
+
+                                                                    max="100"
+
+                                                                    value={specLimits[sieve.id]?.max ?? ''}
+
+                                                                    onChange={(e) => handleSpecLimitChange(sieve.id, 'max', e.target.value)}
+
+                                                                    className="spec-input english-text"
+
+                                                                    placeholder="Max"
+
+                                                                    dir="ltr"
+
+                                                                />
+
                                                             </div>
-                                                        ) : '-'}
+
+                                                        ) : (
+
+                                                            <span className="text-slate-400 text-xs">-</span>
+
+                                                        )}
+
                                                     </td>
+
                                                     <td className="px-2 py-2 text-center">
+
                                                         {!isPan && hasData && calc?.minLimit !== null ? (
-                                                            calc?.isWithinSpec ? <span className="text-green-500"><CheckCircleIcon /></span> : <span className="text-red-500"><AlertTriangleIcon /></span>
-                                                        ) : '-'}
+
+                                                            calc?.isWithinSpec ? (
+
+                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-bold">
+
+                                                                    <CheckCircleIcon />
+
+                                                                </span>
+
+                                                            ) : (
+
+                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-bold">
+
+                                                                    <AlertTriangleIcon />
+
+                                                                </span>
+
+                                                            )
+
+                                                        ) : (
+
+                                                            <span className="text-slate-400 text-xs">-</span>
+
+                                                        )}
+
                                                     </td>
+
                                                 </tr>
+
                                             );
+
                                         })}
+
                                     </tbody>
+
                                 </table>
+
                             </div>
+
                         </div>
 
-                        {/* Chart */}
+
+
+                        {/* Gradation Chart */}
+
                         <div className="xl:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+
                             <div className="bg-slate-50 border-b border-slate-200 px-4 py-3">
+
                                 <h3 className="text-sm font-bold text-slate-800">منحنى التدرج الحبيبي</h3>
+
+                                <p className="english-text text-xs text-slate-500">Gradation Curve (S-Curve)</p>
+
                             </div>
+
                             <div className="p-4">
+
                                 <div className="h-64" dir="ltr">
-                                    <GradationChart data={calculations.results} sieves={sieveDefinitions} />
+
+                                    <GradationChart 
+
+                                        data={calculations.results}
+
+                                        sieves={sieveDefinitions}
+
+                                    />
+
                                 </div>
+
                             </div>
+
+                            
+
+                            {/* Result Badge */}
+
                             {hasData && (
-                                <div className={`mx-4 mb-4 rounded-lg p-3 text-center ${allPassing ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                    <span className="text-lg font-bold">{allPassing ? 'مطابق للمواصفات / PASS' : 'غير مطابق / FAIL'}</span>
+
+                                <div className={`mx-4 mb-4 rounded-lg p-3 text-center ${allPassing ? 'bg-green-100' : 'bg-red-100'}`}>
+
+                                    <span className={`text-lg font-bold ${allPassing ? 'text-green-700' : 'text-red-700'}`}>
+
+                                        {allPassing ? 'مطابق للمواصفات / PASS' : 'غير مطابق / FAIL'}
+
+                                    </span>
+
                                 </div>
+
                             )}
+
                         </div>
+
                     </div>
+
                 </div>
+
             );
+
         };
+
+
 
         // ============= COMBINED GRADATION (BLENDING) TAB =============
         const CombinedGradationTab = ({ dataA, dataB, dataC }) => {
