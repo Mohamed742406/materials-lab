@@ -5303,6 +5303,223 @@
                 </div>
             );
         };
+        // ============= ASTM C29 - BULK DENSITY (UNIT WEIGHT) =============
+        const BulkDensityTest = () => {
+            // Settings
+            const [procedure, setProcedure] = useState('rodding'); // rodding, jigging, shoveling
+            const [showCalibration, setShowCalibration] = useState(false);
+
+            // Inputs
+            const [inputs, setInputs] = useState({
+                measureVolume: '',      // V: Volume of measure (L)
+                massMeasure: '',        // T: Mass of measure (kg)
+                massMeasureAgg: '',     // G: Mass of measure + aggregate (kg)
+                bulkSG: '',             // S: Bulk Specific Gravity (Dry) for Void calc
+                waterTemp: '23',        // Water Temp for calibration
+            });
+
+            // Calibration State
+            const [calib, setCalib] = useState({
+                massGlass: '',
+                massMeasureGlassWater: '',
+                massMeasure: ''
+            });
+
+            // Water Density Table (Table 3) - Simplified
+            const getWaterDensity = (temp) => {
+                const t = parseFloat(temp);
+                if (t <= 18) return 998.54; // ~65F
+                if (t <= 23) return 997.54; // ~73.4F
+                return 996.59; // ~80F (Default approx)
+            };
+
+            // Calculate Volume from Calibration (Sec 8 & 13.3)
+            const calculateVolume = () => {
+                const W = parseFloat(calib.massMeasureGlassWater) || 0; // Mass of measure + glass + water
+                const M = parseFloat(calib.massMeasure) || 0; // Mass of measure
+                const G = parseFloat(calib.massGlass) || 0; // Mass of glass
+                
+                const totalTare = M + G;
+                const densityWater = getWaterDensity(inputs.waterTemp);
+
+                if (W > totalTare && densityWater > 0) {
+                    const volM3 = (W - totalTare) / densityWater;
+                    const volLiters = volM3 * 1000;
+                    setInputs(prev => ({ ...prev, measureVolume: volLiters.toFixed(4) }));
+                }
+            };
+
+            // Main Calculations (Sec 13)
+            const results = useMemo(() => {
+                const G = parseFloat(inputs.massMeasureAgg) || 0;
+                const T = parseFloat(inputs.massMeasure) || 0;
+                const V_L = parseFloat(inputs.measureVolume) || 0;
+                const S = parseFloat(inputs.bulkSG) || 0;
+
+                if (G === 0 || T === 0 || V_L === 0) {
+                    return { density: 0, voids: 0, hasData: false };
+                }
+
+                const V_m3 = V_L / 1000; // Convert Liters to m3
+
+                // 1. Bulk Density (M) = (G - T) / V
+                const netMass = G - T;
+                const density = netMass / V_m3; // kg/m3
+
+                // Rounding: Nearest 10 kg/m3 (Sec 14.1)
+                const densityRounded = Math.round(density / 10) * 10;
+
+                // 2. Voids % (Sec 13.2)
+                let voids = 0;
+                if (S > 0) {
+                    const W = 998; 
+                    voids = 100 * ((S * W) - density) / (S * W);
+                }
+
+                // Rounding: Nearest 1% (Sec 14.2)
+                const voidsRounded = Math.round(voids);
+
+                return {
+                    densityRaw: density,
+                    densityRounded,
+                    voidsRaw: voids,
+                    voidsRounded,
+                    hasData: true,
+                    netMass
+                };
+            }, [inputs]);
+
+            const handleInputChange = (field, value) => {
+                setInputs(prev => ({ ...prev, [field]: value }));
+            };
+
+            const handleCalibChange = (field, value) => {
+                setCalib(prev => ({ ...prev, [field]: value }));
+            };
+
+            return (
+                <div className="p-4 space-y-4">
+                    {/* Header */}
+                    <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+                        <div className="flex items-center justify-between mb-4">
+                            <div>
+                                <h2 className="text-lg font-bold text-slate-800">الوزن الحجمي للركام (الكثافة السائبة)</h2>
+                                <p className="english-text text-sm text-slate-500">Bulk Density ("Unit Weight") and Voids in Aggregate (ASTM C29)</p>
+                            </div>
+                            <button onClick={() => {
+                                setInputs({ measureVolume: '', massMeasure: '', massMeasureAgg: '', bulkSG: '', waterTemp: '23' });
+                                setCalib({ massGlass: '', massMeasureGlassWater: '', massMeasure: '' });
+                            }} className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm">
+                                <RefreshIcon /><span className="font-medium">إعادة تعيين</span>
+                            </button>
+                        </div>
+
+                        {/* Procedure Selection */}
+                        <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-100">
+                            <h3 className="text-sm font-bold text-indigo-800 mb-3">طريقة الاختبار (Selection of Procedure - Sec 9)</h3>
+                            <div className="flex gap-3">
+                                <button onClick={() => setProcedure('rodding')} className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${procedure === 'rodding' ? 'bg-indigo-600 text-white shadow' : 'bg-white text-slate-600 border'}`}>
+                                    الدمك بالقضيب (Rodding)<br/><span className="text-[10px] font-normal">Max Size ≤ 37.5mm (1½")</span>
+                                </button>
+                                <button onClick={() => setProcedure('jigging')} className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${procedure === 'jigging' ? 'bg-indigo-600 text-white shadow' : 'bg-white text-slate-600 border'}`}>
+                                    الدمك بالهز (Jigging)<br/><span className="text-[10px] font-normal">37.5mm &lt; Size ≤ 125mm</span>
+                                </button>
+                                <button onClick={() => setProcedure('shoveling')} className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${procedure === 'shoveling' ? 'bg-indigo-600 text-white shadow' : 'bg-white text-slate-600 border'}`}>
+                                    الجرف (Shoveling)<br/><span className="text-[10px] font-normal">Loose Density</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        {/* Inputs */}
+                        <div className="space-y-4">
+                            {/* Calibration Section */}
+                            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                                <button onClick={() => setShowCalibration(!showCalibration)} className="w-full bg-slate-50 px-4 py-3 flex justify-between items-center hover:bg-slate-100">
+                                    <h3 className="text-sm font-bold text-slate-800">معايرة الوعاء (Calibration) <span className="english-text font-normal text-slate-500">- Sec 8</span></h3>
+                                    <span>{showCalibration ? '▲' : '▼'}</span>
+                                </button>
+                                {showCalibration && (
+                                    <div className="p-4 bg-slate-50 border-t border-slate-200">
+                                        <div className="grid grid-cols-2 gap-3 text-sm">
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-700 mb-1">وزن الوعاء فارغ (kg)</label>
+                                                <input type="number" value={calib.massMeasure} onChange={(e) => handleCalibChange('massMeasure', e.target.value)} className="w-full p-2 border rounded" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-700 mb-1">وزن اللوح الزجاجي (kg)</label>
+                                                <input type="number" value={calib.massGlass} onChange={(e) => handleCalibChange('massGlass', e.target.value)} className="w-full p-2 border rounded" />
+                                            </div>
+                                            <div className="col-span-2">
+                                                <label className="block text-xs font-bold text-slate-700 mb-1">وزن (الوعاء + الزجاج + الماء) (kg)</label>
+                                                <input type="number" value={calib.massMeasureGlassWater} onChange={(e) => handleCalibChange('massMeasureGlassWater', e.target.value)} className="w-full p-2 border rounded" />
+                                            </div>
+                                            <div className="col-span-2">
+                                                <button onClick={calculateVolume} className="w-full py-2 bg-indigo-600 text-white rounded font-bold hover:bg-indigo-700">احسب الحجم وانقله</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Main Inputs */}
+                            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                                <h3 className="text-sm font-bold text-slate-800 mb-4 border-b pb-2">بيانات الاختبار (Test Data)</h3>
+                                <div className="space-y-4">
+                                    <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                                        <label className="block text-sm font-bold text-blue-800 mb-1">V - حجم الوعاء (لتر)</label>
+                                        <span className="english-text text-xs text-blue-600 block mb-2">Volume of Measure (Liters)</span>
+                                        <input type="number" value={inputs.measureVolume} onChange={(e) => handleInputChange('measureVolume', e.target.value)} className="w-full p-2 border border-blue-300 rounded text-center font-bold text-lg" placeholder="e.g., 14.0" dir="ltr" />
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                                            <label className="block text-sm font-bold text-slate-700 mb-1">T - وزن الوعاء (kg)</label>
+                                            <span className="english-text text-xs text-slate-500 block mb-2">Mass of Measure</span>
+                                            <input type="number" value={inputs.massMeasure} onChange={(e) => handleInputChange('massMeasure', e.target.value)} className="w-full p-2 border rounded text-center" placeholder="kg" dir="ltr" />
+                                        </div>
+                                        <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                                            <label className="block text-sm font-bold text-slate-700 mb-1">G - الوزن القائم (kg)</label>
+                                            <span className="english-text text-xs text-slate-500 block mb-2">Mass (Agg + Measure)</span>
+                                            <input type="number" value={inputs.massMeasureAgg} onChange={(e) => handleInputChange('massMeasureAgg', e.target.value)} className="w-full p-2 border rounded text-center" placeholder="kg" dir="ltr" />
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
+                                        <label className="block text-sm font-bold text-amber-800 mb-1">S - الوزن النوعي الجاف (اختياري)</label>
+                                        <span className="english-text text-xs text-amber-600 block mb-2">Bulk Specific Gravity (Dry Basis) - For Voids %</span>
+                                        <input type="number" value={inputs.bulkSG} onChange={(e) => handleInputChange('bulkSG', e.target.value)} className="w-full p-2 border border-amber-300 rounded text-center" placeholder="e.g., 2.65" dir="ltr" />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Results */}
+                        <div className="space-y-4">
+                            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 h-full flex flex-col justify-center">
+                                <div className="text-center mb-8">
+                                    <h4 className="text-slate-500 text-sm font-bold mb-2">الكثافة (Bulk Density) - M</h4>
+                                    <div className="text-5xl font-bold text-indigo-700 english-text mb-2">
+                                        {results.hasData ? results.densityRounded : '-'}
+                                    </div>
+                                    <span className="text-slate-400 font-bold">kg/m³</span>
+                                    {results.hasData && <div className="text-xs text-slate-400 mt-2">Calculated: {results.densityRaw.toFixed(2)} | Rounded to nearest 10</div>}
+                                </div>
+
+                                <div className="border-t border-slate-100 pt-6 text-center">
+                                    <h4 className="text-slate-500 text-sm font-bold mb-2">نسبة الفراغات (% Voids)</h4>
+                                    <div className={`text-4xl font-bold english-text mb-2 ${results.voidsRounded > 0 ? 'text-amber-600' : 'text-slate-300'}`}>
+                                        {results.hasData && inputs.bulkSG ? results.voidsRounded : '-'} %
+                                    </div>
+                                    {(!inputs.bulkSG && results.hasData) && <span className="text-xs text-red-400">أدخل الوزن النوعي (SG) لحساب الفراغات</span>}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
         // ============= GENERIC TEST PAGE =============
         const GenericTestPage = ({ test }) => {
             const Icon = test.icon;
@@ -5371,6 +5588,9 @@
             }
              if (test.id === 'C88') {
                 return <SoundnessTest />;
+            }
+            if (test.id === 'C29') {
+                return <BulkDensityTest />;
             }
             return <GenericTestPage test={test} />;
         };
