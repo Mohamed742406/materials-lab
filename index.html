@@ -5369,7 +5369,9 @@
             if (test.id === 'C131') {
                 return <LAAbrasionTest />;
             }
-
+             if (test.id === 'C88') {
+                return <SoundnessTest />;
+            }
             return <GenericTestPage test={test} />;
         };
 
